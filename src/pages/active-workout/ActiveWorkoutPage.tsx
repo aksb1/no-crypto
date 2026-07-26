@@ -16,15 +16,11 @@ import { useSwipeToDelete } from '../../hooks/useSwipeToDelete'
 
 function SetRow({ set, number, onComplete, onRemove }: { set: WorkoutSet; number: number; onComplete: () => void; onRemove: () => void }) {
   const swipe = useSwipeToDelete(onRemove)
-  const previous = set.previousWeight != null || set.previousRepetitions != null
-    ? `${formatNumber(set.previousWeight ?? 0)} × ${set.previousRepetitions ?? 0}`
-    : '—'
   return (
     <div className="set-row-swipe">
       <div className="swipe-delete-layer"><Trash2 size={17} /><span>Удалить</span></div>
       <div className={`set-row ${set.completed ? 'set-row--completed' : ''}`} style={{ transform: `translateX(${swipe.offset}px)` }} {...swipe.handlers}>
         <div className="set-number">{number}</div>
-        <div className="previous-set"><span>прошлый</span><strong>{previous}</strong></div>
         <label className="set-input"><span>Вес, кг</span><input type="number" min="0" step="0.5" defaultValue={set.weight ?? ''} onBlur={(event) => updateSet(set.id, { weight: event.target.value === '' ? null : Number(event.target.value) })} /></label>
         <span className="set-multiply">×</span>
         <label className="set-input"><span>Повторы</span><input type="number" min="0" step="1" defaultValue={set.repetitions ?? ''} onBlur={(event) => updateSet(set.id, { repetitions: event.target.value === '' ? null : Number(event.target.value) })} /></label>
@@ -40,6 +36,7 @@ function ExerciseCard({ exercise, index, onHistory, autoStartTimer }: { exercise
   const [collapsed, setCollapsed] = useState(false)
   const { start } = useRestTimer()
   const completed = exercise.sets.filter((set) => set.completed).length
+  const isComplete = exercise.sets.length > 0 && completed === exercise.sets.length
   const volume = exercise.sets.reduce((sum, set) => sum + (set.completed ? (set.weight ?? 0) * (set.repetitions ?? 0) : 0), 0)
 
   async function toggleSet(set: WorkoutSet) {
@@ -50,14 +47,14 @@ function ExerciseCard({ exercise, index, onHistory, autoStartTimer }: { exercise
 
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }}>
-      <Card className="exercise-card">
-        <header className="exercise-card__header">
+      <Card className={`exercise-card ${isComplete ? 'exercise-card--complete' : ''}`}>
+        <header className="exercise-card__header" role="button" tabIndex={0} aria-expanded={!collapsed} onClick={() => setCollapsed((value) => !value)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setCollapsed((value) => !value) } }}>
           <div className="exercise-index">{String(index + 1).padStart(2, '0')}</div>
           <div className="exercise-title"><span>Упражнение</span><h2>{exercise.exerciseNameSnapshot}</h2><div><span><CheckCircle2 size={14} />{completed}/{exercise.sets.length} подходов</span><span><Dumbbell size={14} />{formatNumber(volume)} кг</span></div></div>
-          <div className="exercise-card__actions"><Button variant="ghost" size="sm" icon={<History size={15} />} onClick={onHistory}>История</Button><Button variant="ghost" size="icon" onClick={() => setCollapsed((value) => !value)}><ChevronDown size={18} className={collapsed ? 'rotate' : ''} /></Button></div>
+          <div className="exercise-card__actions"><Button variant="ghost" size="sm" icon={<History size={15} />} onClick={(event) => { event.stopPropagation(); onHistory() }}>История</Button><ChevronDown size={18} className={`exercise-chevron ${collapsed ? 'rotate' : ''}`} /></div>
         </header>
         {!collapsed && <div className="exercise-card__body">
-          <div className="sets-labels"><span>Подход</span><span>Прошлый раз</span><span>Текущий результат</span><span>Объём</span></div>
+          <div className="sets-labels"><span>Подход</span><span>Текущий результат</span><span>Объём</span></div>
           <div className="sets-list">{exercise.sets.map((set, setIndex) => <SetRow key={set.id} set={set} number={setIndex + 1} onComplete={() => toggleSet(set)} onRemove={() => removeSet(set.id)} />)}</div>
           <div className="exercise-footer"><Button variant="secondary" size="sm" icon={<Plus size={16} />} onClick={() => addSet(exercise.id)}>Добавить подход</Button>{exercise.defaultRestSeconds > 0 ? <button className="rest-quick" onClick={() => start(exercise.defaultRestSeconds)}><TimerReset size={15} />Отдых {exercise.defaultRestSeconds} сек</button> : <span className="rest-disabled">Таймер отдыха отключён</span>}</div>
         </div>}
@@ -115,7 +112,7 @@ export function ActiveWorkoutPage() {
       </header>
       <div className="session-progress"><motion.div animate={{ width: `${totals.total ? (totals.completed / totals.total) * 100 : 0}%` }} /></div>
       <div className="active-exercise-list">
-        <div className="workout-focus-intro"><div><span>Сегодня</span><h2>Работай в своём ритме</h2><p>Прошлые значения уже подставлены. Измени их и отмечай выполненные подходы.</p></div><div className="focus-orb"><Sparkles size={23} /></div></div>
+        <div className="workout-focus-intro"><div><span>Сегодня</span><h2>Работай в своём ритме</h2><p>Заполняй вес и повторения, затем отмечай выполненные подходы.</p></div><div className="focus-orb"><Sparkles size={23} /></div></div>
         {session.exercises.map((exercise, index) => <ExerciseCard key={exercise.id} exercise={exercise} index={index} autoStartTimer={settings?.autoStartTimer ?? true} onHistory={() => setHistoryExercise({ id: exercise.exerciseId, name: exercise.exerciseNameSnapshot })} />)}
         <Card className="session-finish-panel">
           <div><CheckCircle2 size={22} /><span>Все упражнения выполнены?</span><strong>Заверши тренировку и сохрани результат в историю</strong></div>
@@ -125,7 +122,7 @@ export function ActiveWorkoutPage() {
 
       <ExerciseHistoryModal exerciseId={historyExercise?.id ?? ''} exerciseName={historyExercise?.name ?? ''} open={Boolean(historyExercise)} onClose={() => setHistoryExercise(null)} />
       <Modal open={finishOpen} onClose={() => setFinishOpen(false)} title="Завершить тренировку?">
-        <div className="finish-summary"><div className="finish-trophy"><Trophy size={27} /></div><h3>Отличная работа</h3><p>Результаты сохранятся в истории и станут основой для следующей тренировки.</p><div className="finish-summary__metrics"><div><span>Время</span><strong>{formatDuration(elapsed)}</strong></div><div><span>Подходы</span><strong>{totals.completed}</strong></div><div><span>Объём</span><strong>{formatCompact(totals.volume)} кг</strong></div></div><div className="finish-summary__actions"><Button variant="secondary" onClick={() => setFinishOpen(false)}>Продолжить</Button><Button loading={finishing} onClick={handleFinish} icon={<CheckCircle2 size={17} />}>Сохранить результат</Button></div></div>
+        <div className="finish-summary"><div className="finish-trophy"><Trophy size={27} /></div><h3>Отличная работа</h3><p>Результаты сохранятся в истории и статистике.</p><div className="finish-summary__metrics"><div><span>Время</span><strong>{formatDuration(elapsed)}</strong></div><div><span>Подходы</span><strong>{totals.completed}</strong></div><div><span>Объём</span><strong>{formatCompact(totals.volume)} кг</strong></div></div><div className="finish-summary__actions"><Button variant="secondary" onClick={() => setFinishOpen(false)}>Продолжить</Button><Button loading={finishing} onClick={handleFinish} icon={<CheckCircle2 size={17} />}>Сохранить результат</Button></div></div>
       </Modal>
     </motion.div>
   )

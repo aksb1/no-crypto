@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { motion } from 'motion/react'
-import { CalendarDays, Clock3, Dumbbell, Ellipsis, GripVertical, History, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
-import { Link, useLocation } from 'wouter'
+import { Clock3, Dumbbell, Ellipsis, GripVertical, History, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
+import { Link } from 'wouter'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -11,10 +11,12 @@ import { Card } from '../../components/ui/Card'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageHeader } from '../../components/ui/PageHeader'
-import { archiveTemplate, deleteCompletedSession, listCompletedSessions, listTemplateDetails, reorderTemplates, restoreTemplate, startSession } from '../../storage/repositories/workoutRepository'
-import { formatCompact, formatDateLong, formatDuration, formatRelative } from '../../utils/format'
+import { WorkoutHistoryRow } from '../../components/workouts/WorkoutHistoryRow'
+import { archiveTemplate, deleteCompletedSession, listCompletedSessions, listTemplateDetails, reorderTemplates, restoreTemplate } from '../../storage/repositories/workoutRepository'
+import { formatDuration, formatRelative } from '../../utils/format'
 import { useSwipeToDelete } from '../../hooks/useSwipeToDelete'
 import type { TemplateDetails, WorkoutSession } from '../../types/domain'
+import { useWorkoutStart } from '../../features/workout-session/WorkoutStartProvider'
 
 function SortableWorkoutCard({ template, last, menuOpen, dragDisabled, onToggleMenu, onDelete, onStart }: {
   template: TemplateDetails
@@ -54,18 +56,13 @@ function SwipeableHistoryRow({ session, onDelete }: { session: WorkoutSession; o
   return (
     <div className="history-row-swipe">
       <div className="history-delete-layer"><Trash2 size={18} /><span>Удалить</span></div>
-      <Card className="history-row" style={{ transform: `translateX(${swipe.offset}px)` }} {...swipe.handlers}>
-        <div className="history-row__date"><strong>{new Date(session.completedAt ?? session.startedAt).getDate()}</strong><span>{new Date(session.completedAt ?? session.startedAt).toLocaleString('ru', { month: 'short' })}</span></div>
-        <div className="history-row__main"><h3>{session.templateNameSnapshot}</h3><span><CalendarDays size={14} />{formatDateLong(session.completedAt)}</span></div>
-        <div className="history-row__metric"><strong>{formatCompact(session.totalVolume)} кг</strong><span>объём</span></div>
-        <div className="history-row__metric"><strong>{formatDuration(session.durationSeconds)}</strong><span>время</span></div>
-      </Card>
+      <WorkoutHistoryRow session={session} style={{ transform: `translateX(${swipe.offset}px)` }} {...swipe.handlers} />
     </div>
   )
 }
 
 export function WorkoutsPage() {
-  const [, navigate] = useLocation()
+  const startWorkout = useWorkoutStart()
   const templates = useLiveQuery(listTemplateDetails, [])
   const sessions = useLiveQuery(() => listCompletedSessions(), [])
   const [tab, setTab] = useState<'templates' | 'history'>('templates')
@@ -82,10 +79,6 @@ export function WorkoutsPage() {
     sessions?.forEach((session) => { if (!map.has(session.templateId)) map.set(session.templateId, session) })
     return map
   }, [sessions])
-
-  async function handleStart(templateId: string) {
-    navigate(`/session/${await startSession(templateId)}`)
-  }
 
   async function handleDelete(id: string) {
     await archiveTemplate(id)
@@ -105,7 +98,7 @@ export function WorkoutsPage() {
 
   return (
     <motion.div className="page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <PageHeader eyebrow="Training space" title="Тренировки" description="Создавай программы один раз. Вес, подходы и прогресс Forma запомнит автоматически." actions={<Link href="/workouts/new"><Button icon={<Plus size={17} />}>Новая тренировка</Button></Link>} />
+      <PageHeader eyebrow="Training space" title="Тренировки" description="Создавай программы один раз и запускай нужную тренировку в одно касание." actions={<Link href="/workouts/new"><Button icon={<Plus size={17} />}>Новая тренировка</Button></Link>} />
       <div className="toolbar">
         <div className="segmented"><button className={tab === 'templates' ? 'active' : ''} onClick={() => setTab('templates')}><Dumbbell size={16} />Шаблоны</button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><History size={16} />История</button></div>
         <label className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Найти тренировку" /></label>
@@ -116,7 +109,7 @@ export function WorkoutsPage() {
         filtered.length ? <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={(templates ?? []).map((template) => template.id)} strategy={rectSortingStrategy}>
             <div className="workout-grid">
-              {filtered.map((template) => <SortableWorkoutCard key={template.id} template={template} last={lastByTemplate.get(template.id)} menuOpen={menu === template.id} dragDisabled={Boolean(query.trim())} onToggleMenu={() => setMenu(menu === template.id ? null : template.id)} onDelete={() => { setMenu(null); setDeleteTemplateTarget(template) }} onStart={() => handleStart(template.id)} />)}
+              {filtered.map((template) => <SortableWorkoutCard key={template.id} template={template} last={lastByTemplate.get(template.id)} menuOpen={menu === template.id} dragDisabled={Boolean(query.trim())} onToggleMenu={() => setMenu(menu === template.id ? null : template.id)} onDelete={() => { setMenu(null); setDeleteTemplateTarget(template) }} onStart={() => startWorkout({ id: template.id, name: template.name })} />)}
             </div>
           </SortableContext>
         </DndContext> : <EmptyState title="Здесь будут твои программы" description="Создай первую тренировку и добавь упражнения в удобном порядке." action={<Link href="/workouts/new"><Button icon={<Plus size={17} />}>Создать тренировку</Button></Link>} />

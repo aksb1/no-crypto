@@ -94,7 +94,7 @@ export function WorkoutBuilderPage() {
 
   return (
     <motion.div className="page builder-page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-      <PageHeader eyebrow="Workout builder" title={templateId ? 'Редактировать тренировку' : 'Новая тренировка'} description="Собери удобный порядок упражнений. Всё можно изменить позже." actions={<><Button variant="secondary" icon={<ArrowLeft size={17} />} onClick={() => navigate('/workouts')}>Назад</Button><Button icon={<Check size={17} />} loading={saving} onClick={handleSave}>Сохранить</Button></>} />
+      <PageHeader eyebrow="Workout builder" title={templateId ? 'Редактировать тренировку' : 'Новая тренировка'} description="Собери удобный порядок упражнений. Всё можно изменить позже." actions={<Button variant="secondary" icon={<ArrowLeft size={17} />} onClick={() => navigate('/workouts')}>Назад</Button>} />
       <div className="builder-layout">
         <Card className="builder-settings">
           <div className="settings-section"><span className="card-kicker">Основное</span><label className="field"><span>Название тренировки</span><input className="large-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, Грудь + руки" autoFocus={!templateId} /></label></div>
@@ -111,6 +111,10 @@ export function WorkoutBuilderPage() {
             </SortableContext>
           </DndContext>
           <button className="add-exercise-button" onClick={addExercise}><Plus size={18} /><div><strong>Добавить упражнение</strong><span>Введи любое название</span></div></button>
+          <div className="builder-save-footer">
+            <div><span>Всё готово?</span><strong>Сохрани тренировку после добавления всех упражнений</strong></div>
+            <Button size="lg" icon={<Check size={17} />} loading={saving} onClick={handleSave}>Сохранить</Button>
+          </div>
         </Card>
       </div>
     </motion.div>

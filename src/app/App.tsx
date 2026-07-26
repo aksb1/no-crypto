@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Redirect, Route, Switch } from 'wouter'
 import { AppLayout } from '../layouts/AppLayout'
 import { PwaUpdatePrompt } from '../components/feedback/PwaUpdatePrompt'
+import { WorkoutStartProvider } from '../features/workout-session/WorkoutStartProvider'
 
 const DashboardPage = lazy(() => import('../pages/dashboard/DashboardPage').then((module) => ({ default: module.DashboardPage })))
 const WorkoutsPage = lazy(() => import('../pages/workouts/WorkoutsPage').then((module) => ({ default: module.WorkoutsPage })))
@@ -13,7 +14,7 @@ const SettingsPage = lazy(() => import('../pages/settings/SettingsPage').then((m
 
 export default function App() {
   return (
-    <>
+    <WorkoutStartProvider>
       <AppLayout>
         <Suspense fallback={<div className="route-loader"><div className="loading-orb" /></div>}>
           <Switch>
@@ -30,6 +31,6 @@ export default function App() {
         </Suspense>
       </AppLayout>
       <PwaUpdatePrompt />
-    </>
+    </WorkoutStartProvider>
   )
 }

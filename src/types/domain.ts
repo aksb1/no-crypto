@@ -60,8 +60,6 @@ export interface WorkoutSet {
   position: number
   weight: number | null
   repetitions: number | null
-  previousWeight?: number | null
-  previousRepetitions?: number | null
   completed: boolean
   restSeconds?: number
   completedAt?: string

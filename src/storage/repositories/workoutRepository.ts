@@ -116,17 +116,14 @@ export async function getActiveSession() {
 
 export async function startSession(templateId: string): Promise<string> {
   const active = await getActiveSession()
-  if (active) return active.id
+  if (active) {
+    if (active.templateId === templateId) return active.id
+    throw new Error('Уже запущена другая тренировка')
+  }
 
   const template = await getTemplateDetails(templateId)
   const sessionId = createId()
   const startedAt = now()
-  const previous = (await db.sessions
-    .where('[templateId+status]')
-    .equals([templateId, 'completed'])
-    .toArray()).sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
-  const lastSession = previous[0]
-  const previousDetails = lastSession ? await getSessionDetails(lastSession.id) : undefined
 
   await db.transaction('rw', [db.sessions, db.sessionExercises, db.sets], async () => {
     await db.sessions.add({
@@ -149,13 +146,7 @@ export async function startSession(templateId: string): Promise<string> {
         defaultRestSeconds: templateExercise.defaultRestSeconds,
       })
 
-      const previousExercise = previousDetails?.exercises.find(
-        (exercise) => exercise.exerciseId === templateExercise.exerciseId,
-      )
-      const completedPreviousSets = previousExercise?.sets.filter((set) => set.completed) ?? []
-      const sourceSets = completedPreviousSets.length
-        ? completedPreviousSets
-        : Array.from({ length: 3 }, (_, position) => ({ position, weight: null, repetitions: null }))
+      const sourceSets = Array.from({ length: 3 }, (_, position) => ({ position }))
 
       for (const source of sourceSets) {
         await db.sets.add({
@@ -164,10 +155,8 @@ export async function startSession(templateId: string): Promise<string> {
           sessionExerciseId,
           exerciseId: templateExercise.exerciseId,
           position: source.position,
-          weight: source.weight,
-          repetitions: source.repetitions,
-          previousWeight: source.weight,
-          previousRepetitions: source.repetitions,
+          weight: null,
+          repetitions: null,
           completed: false,
         })
       }
@@ -211,8 +200,6 @@ export async function addSet(sessionExerciseId: string) {
     position: existing.length,
     weight: null,
     repetitions: null,
-    previousWeight: null,
-    previousRepetitions: null,
     completed: false,
   })
 }
