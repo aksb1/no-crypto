@@ -1,0 +1,132 @@
+import { useEffect, useMemo, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { motion } from 'motion/react'
+import { ArrowLeft, Check, CheckCircle2, ChevronDown, Clock3, Dumbbell, History, Plus, RotateCcw, Sparkles, TimerReset, Trash2, Trophy } from 'lucide-react'
+import { useLocation, useParams } from 'wouter'
+import { Button } from '../../components/ui/Button'
+import { Card } from '../../components/ui/Card'
+import { Modal } from '../../components/ui/Modal'
+import { useRestTimer } from '../../features/rest-timer/useRestTimer'
+import { addSet, cancelSession, completeSession, getSessionDetails, removeSet, updateSet } from '../../storage/repositories/workoutRepository'
+import type { SessionExercise, WorkoutSet } from '../../types/domain'
+import { formatCompact, formatDuration, formatNumber } from '../../utils/format'
+import { ExerciseHistoryModal } from '../../widgets/exercise-history/ExerciseHistoryModal'
+import { db } from '../../storage/database/db'
+import { useSwipeToDelete } from '../../hooks/useSwipeToDelete'
+
+function SetRow({ set, number, onComplete, onRemove }: { set: WorkoutSet; number: number; onComplete: () => void; onRemove: () => void }) {
+  const swipe = useSwipeToDelete(onRemove)
+  const previous = set.previousWeight != null || set.previousRepetitions != null
+    ? `${formatNumber(set.previousWeight ?? 0)} × ${set.previousRepetitions ?? 0}`
+    : '—'
+  return (
+    <div className="set-row-swipe">
+      <div className="swipe-delete-layer"><Trash2 size={17} /><span>Удалить</span></div>
+      <div className={`set-row ${set.completed ? 'set-row--completed' : ''}`} style={{ transform: `translateX(${swipe.offset}px)` }} {...swipe.handlers}>
+        <div className="set-number">{number}</div>
+        <div className="previous-set"><span>прошлый</span><strong>{previous}</strong></div>
+        <label className="set-input"><span>Вес, кг</span><input type="number" min="0" step="0.5" defaultValue={set.weight ?? ''} onBlur={(event) => updateSet(set.id, { weight: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+        <span className="set-multiply">×</span>
+        <label className="set-input"><span>Повторы</span><input type="number" min="0" step="1" defaultValue={set.repetitions ?? ''} onBlur={(event) => updateSet(set.id, { repetitions: event.target.value === '' ? null : Number(event.target.value) })} /></label>
+        <div className="set-volume"><span>объём</span><strong>{formatNumber((set.weight ?? 0) * (set.repetitions ?? 0))}</strong></div>
+        <button className={`complete-set ${set.completed ? 'active' : ''}`} onClick={onComplete} aria-label="Завершить подход"><Check size={18} /></button>
+        <button className="remove-set" onClick={onRemove} aria-label="Удалить подход"><Trash2 size={15} /></button>
+      </div>
+    </div>
+  )
+}
+
+function ExerciseCard({ exercise, index, onHistory, autoStartTimer }: { exercise: SessionExercise & { sets: WorkoutSet[] }; index: number; onHistory: () => void; autoStartTimer: boolean }) {
+  const [collapsed, setCollapsed] = useState(false)
+  const { start } = useRestTimer()
+  const completed = exercise.sets.filter((set) => set.completed).length
+  const volume = exercise.sets.reduce((sum, set) => sum + (set.completed ? (set.weight ?? 0) * (set.repetitions ?? 0) : 0), 0)
+
+  async function toggleSet(set: WorkoutSet) {
+    const next = !set.completed
+    await updateSet(set.id, { completed: next })
+    if (next && autoStartTimer && exercise.defaultRestSeconds > 0) start(exercise.defaultRestSeconds)
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.04 }}>
+      <Card className="exercise-card">
+        <header className="exercise-card__header">
+          <div className="exercise-index">{String(index + 1).padStart(2, '0')}</div>
+          <div className="exercise-title"><span>Упражнение</span><h2>{exercise.exerciseNameSnapshot}</h2><div><span><CheckCircle2 size={14} />{completed}/{exercise.sets.length} подходов</span><span><Dumbbell size={14} />{formatNumber(volume)} кг</span></div></div>
+          <div className="exercise-card__actions"><Button variant="ghost" size="sm" icon={<History size={15} />} onClick={onHistory}>История</Button><Button variant="ghost" size="icon" onClick={() => setCollapsed((value) => !value)}><ChevronDown size={18} className={collapsed ? 'rotate' : ''} /></Button></div>
+        </header>
+        {!collapsed && <div className="exercise-card__body">
+          <div className="sets-labels"><span>Подход</span><span>Прошлый раз</span><span>Текущий результат</span><span>Объём</span></div>
+          <div className="sets-list">{exercise.sets.map((set, setIndex) => <SetRow key={set.id} set={set} number={setIndex + 1} onComplete={() => toggleSet(set)} onRemove={() => removeSet(set.id)} />)}</div>
+          <div className="exercise-footer"><Button variant="secondary" size="sm" icon={<Plus size={16} />} onClick={() => addSet(exercise.id)}>Добавить подход</Button>{exercise.defaultRestSeconds > 0 ? <button className="rest-quick" onClick={() => start(exercise.defaultRestSeconds)}><TimerReset size={15} />Отдых {exercise.defaultRestSeconds} сек</button> : <span className="rest-disabled">Таймер отдыха отключён</span>}</div>
+        </div>}
+      </Card>
+    </motion.div>
+  )
+}
+
+export function ActiveWorkoutPage() {
+  const { sessionId } = useParams<{ sessionId: string }>()
+  const [, navigate] = useLocation()
+  const session = useLiveQuery(() => sessionId ? getSessionDetails(sessionId) : undefined, [sessionId])
+  const settings = useLiveQuery(() => db.settings.get('app'), [])
+  const [elapsed, setElapsed] = useState(0)
+  const [finishOpen, setFinishOpen] = useState(false)
+  const [historyExercise, setHistoryExercise] = useState<{ id: string; name: string } | null>(null)
+  const [finishing, setFinishing] = useState(false)
+
+  useEffect(() => {
+    if (!session) return
+    const tick = () => setElapsed(Math.max(0, Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000)))
+    tick()
+    const timer = window.setInterval(tick, 1000)
+    return () => window.clearInterval(timer)
+  }, [session?.startedAt])
+
+  const totals = useMemo(() => {
+    const sets = session?.exercises.flatMap((exercise) => exercise.sets) ?? []
+    return { total: sets.length, completed: sets.filter((set) => set.completed).length, volume: sets.reduce((sum, set) => sum + (set.completed ? (set.weight ?? 0) * (set.repetitions ?? 0) : 0), 0) }
+  }, [session])
+
+  if (!session) return <div className="loading-screen"><div className="loading-orb" /><span>Загружаем тренировку…</span></div>
+
+  async function handleFinish() {
+    if (!sessionId) return
+    setFinishing(true)
+    await completeSession(sessionId)
+    useRestTimer.getState().stop()
+    navigate('/workouts')
+  }
+
+  async function handleCancel() {
+    if (!sessionId || !window.confirm('Отменить тренировку? Текущий прогресс будет удалён.')) return
+    await cancelSession(sessionId)
+    useRestTimer.getState().stop()
+    navigate('/workouts')
+  }
+
+  return (
+    <motion.div className="active-workout-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <header className="workout-session-header">
+        <div className="workout-session-header__left"><Button variant="ghost" size="icon" onClick={() => navigate('/workouts')}><ArrowLeft size={19} /></Button><div><span className="live-label"><i />Тренировка идёт</span><h1>{session.templateNameSnapshot}</h1></div></div>
+        <div className="session-live-metrics"><div><Clock3 size={17} /><span>Время</span><strong>{formatDuration(elapsed)}</strong></div><div><Dumbbell size={17} /><span>Объём</span><strong>{formatCompact(totals.volume)} кг</strong></div><div><CheckCircle2 size={17} /><span>Подходы</span><strong>{totals.completed}/{totals.total}</strong></div></div>
+        <div className="workout-session-header__actions"><Button variant="ghost" size="sm" icon={<RotateCcw size={15} />} onClick={handleCancel}>Отменить</Button></div>
+      </header>
+      <div className="session-progress"><motion.div animate={{ width: `${totals.total ? (totals.completed / totals.total) * 100 : 0}%` }} /></div>
+      <div className="active-exercise-list">
+        <div className="workout-focus-intro"><div><span>Сегодня</span><h2>Работай в своём ритме</h2><p>Прошлые значения уже подставлены. Измени их и отмечай выполненные подходы.</p></div><div className="focus-orb"><Sparkles size={23} /></div></div>
+        {session.exercises.map((exercise, index) => <ExerciseCard key={exercise.id} exercise={exercise} index={index} autoStartTimer={settings?.autoStartTimer ?? true} onHistory={() => setHistoryExercise({ id: exercise.exerciseId, name: exercise.exerciseNameSnapshot })} />)}
+        <Card className="session-finish-panel">
+          <div><CheckCircle2 size={22} /><span>Все упражнения выполнены?</span><strong>Заверши тренировку и сохрани результат в историю</strong></div>
+          <Button size="lg" icon={<CheckCircle2 size={18} />} onClick={() => setFinishOpen(true)}>Завершить тренировку</Button>
+        </Card>
+      </div>
+
+      <ExerciseHistoryModal exerciseId={historyExercise?.id ?? ''} exerciseName={historyExercise?.name ?? ''} open={Boolean(historyExercise)} onClose={() => setHistoryExercise(null)} />
+      <Modal open={finishOpen} onClose={() => setFinishOpen(false)} title="Завершить тренировку?">
+        <div className="finish-summary"><div className="finish-trophy"><Trophy size={27} /></div><h3>Отличная работа</h3><p>Результаты сохранятся в истории и станут основой для следующей тренировки.</p><div className="finish-summary__metrics"><div><span>Время</span><strong>{formatDuration(elapsed)}</strong></div><div><span>Подходы</span><strong>{totals.completed}</strong></div><div><span>Объём</span><strong>{formatCompact(totals.volume)} кг</strong></div></div><div className="finish-summary__actions"><Button variant="secondary" onClick={() => setFinishOpen(false)}>Продолжить</Button><Button loading={finishing} onClick={handleFinish} icon={<CheckCircle2 size={17} />}>Сохранить результат</Button></div></div>
+      </Modal>
+    </motion.div>
+  )
+}

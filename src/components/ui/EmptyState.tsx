@@ -1,0 +1,20 @@
+import type { ReactNode } from 'react'
+import { Sparkles } from 'lucide-react'
+import { Card } from './Card'
+
+interface EmptyStateProps {
+  title: string
+  description: string
+  action?: ReactNode
+}
+
+export function EmptyState({ title, description, action }: EmptyStateProps) {
+  return (
+    <Card className="empty-state">
+      <div className="empty-state__orb"><Sparkles size={24} /></div>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {action}
+    </Card>
+  )
+}
