@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -12,6 +12,7 @@ import { PageHeader } from '../../components/ui/PageHeader'
 import { getTemplateDetails, saveTemplate } from '../../storage/repositories/workoutRepository'
 import type { TemplateDraftExercise } from '../../types/domain'
 import { createId } from '../../utils/id'
+import { db } from '../../storage/database/db'
 
 const accents = ['#6d8cff', '#8b6cff', '#34d399', '#f59e72', '#e66bb2', '#54c5f8']
 
@@ -34,11 +35,13 @@ export function WorkoutBuilderPage() {
   const { templateId } = useParams<{ templateId?: string }>()
   const [, navigate] = useLocation()
   const existing = useLiveQuery(() => templateId ? getTemplateDetails(templateId) : undefined, [templateId])
+  const settings = useLiveQuery(() => db.settings.get('app'), [])
   const [name, setName] = useState('')
   const [accent, setAccent] = useState(accents[0])
   const [exercises, setExercises] = useState<DraftItem[]>([{ localId: createId(), name: '', defaultRestSeconds: 90 }])
   const [saving, setSaving] = useState(false)
   const [loadedId, setLoadedId] = useState<string | null>(null)
+  const defaultRestApplied = useRef(false)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
   useEffect(() => {
@@ -49,8 +52,21 @@ export function WorkoutBuilderPage() {
     setLoadedId(existing.id)
   }, [existing, loadedId])
 
+  useEffect(() => {
+    if (templateId || !settings || defaultRestApplied.current) return
+    defaultRestApplied.current = true
+    setExercises((current) => current.map((exercise) => ({
+      ...exercise,
+      defaultRestSeconds: settings.defaultRestSeconds,
+    })))
+  }, [settings, templateId])
+
   function addExercise() {
-    setExercises((current) => [...current, { localId: createId(), name: '', defaultRestSeconds: 90 }])
+    setExercises((current) => [...current, {
+      localId: createId(),
+      name: '',
+      defaultRestSeconds: settings?.defaultRestSeconds ?? 90,
+    }])
   }
 
   function handleDragEnd(event: DragEndEvent) {
