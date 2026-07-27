@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { motion } from 'motion/react'
+import { AnimatePresence, motion } from 'motion/react'
 import { ArrowLeft, Check, CheckCircle2, ChevronDown, Clock3, Dumbbell, History, Plus, RotateCcw, Sparkles, TimerReset, Trash2, Trophy } from 'lucide-react'
 import { useLocation, useParams } from 'wouter'
 import { Button } from '../../components/ui/Button'
@@ -33,16 +33,18 @@ function SetRow({ set, number, onComplete, onRemove }: { set: WorkoutSet; number
 }
 
 function ExerciseCard({ exercise, index, onHistory, autoStartTimer }: { exercise: SessionExercise & { sets: WorkoutSet[] }; index: number; onHistory: () => void; autoStartTimer: boolean }) {
-  const [collapsed, setCollapsed] = useState(false)
-  const { start } = useRestTimer()
   const completed = exercise.sets.filter((set) => set.completed).length
   const isComplete = exercise.sets.length > 0 && completed === exercise.sets.length
+  const [collapsed, setCollapsed] = useState(index !== 0 || isComplete)
+  const { start } = useRestTimer()
   const volume = exercise.sets.reduce((sum, set) => sum + (set.completed ? (set.weight ?? 0) * (set.repetitions ?? 0) : 0), 0)
 
   async function toggleSet(set: WorkoutSet) {
     const next = !set.completed
+    const completesExercise = next && exercise.sets.every((item) => item.id === set.id || item.completed)
     await updateSet(set.id, { completed: next })
     if (next && autoStartTimer && exercise.defaultRestSeconds > 0) start(exercise.defaultRestSeconds)
+    if (completesExercise) setCollapsed(true)
   }
 
   return (
@@ -53,11 +55,13 @@ function ExerciseCard({ exercise, index, onHistory, autoStartTimer }: { exercise
           <div className="exercise-title"><span>Упражнение</span><h2>{exercise.exerciseNameSnapshot}</h2><div><span><CheckCircle2 size={14} />{completed}/{exercise.sets.length} подходов</span><span><Dumbbell size={14} />{formatNumber(volume)} кг</span></div></div>
           <div className="exercise-card__actions"><Button variant="ghost" size="sm" icon={<History size={15} />} onClick={(event) => { event.stopPropagation(); onHistory() }}>История</Button><ChevronDown size={18} className={`exercise-chevron ${collapsed ? 'rotate' : ''}`} /></div>
         </header>
-        {!collapsed && <div className="exercise-card__body">
-          <div className="sets-labels"><span>Подход</span><span>Текущий результат</span><span>Объём</span></div>
-          <div className="sets-list">{exercise.sets.map((set, setIndex) => <SetRow key={set.id} set={set} number={setIndex + 1} onComplete={() => toggleSet(set)} onRemove={() => removeSet(set.id)} />)}</div>
-          <div className="exercise-footer"><Button variant="secondary" size="sm" icon={<Plus size={16} />} onClick={() => addSet(exercise.id)}>Добавить подход</Button>{exercise.defaultRestSeconds > 0 ? <button className="rest-quick" onClick={() => start(exercise.defaultRestSeconds)}><TimerReset size={15} />Отдых {exercise.defaultRestSeconds} сек</button> : <span className="rest-disabled">Таймер отдыха отключён</span>}</div>
-        </div>}
+        <AnimatePresence initial={false}>
+          {!collapsed && <motion.div className="exercise-card__body" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}>
+            <div className="sets-labels"><span>Подход</span><span>Текущий результат</span><span>Объём</span></div>
+            <div className="sets-list">{exercise.sets.map((set, setIndex) => <SetRow key={set.id} set={set} number={setIndex + 1} onComplete={() => toggleSet(set)} onRemove={() => removeSet(set.id)} />)}</div>
+            <div className="exercise-footer"><Button variant="secondary" size="sm" icon={<Plus size={16} />} onClick={() => addSet(exercise.id)}>Добавить подход</Button>{exercise.defaultRestSeconds > 0 ? <button className="rest-quick" onClick={() => start(exercise.defaultRestSeconds)}><TimerReset size={15} />Отдых {exercise.defaultRestSeconds} сек</button> : <span className="rest-disabled">Таймер отдыха отключён</span>}</div>
+          </motion.div>}
+        </AnimatePresence>
       </Card>
     </motion.div>
   )

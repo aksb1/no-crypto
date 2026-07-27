@@ -28,10 +28,17 @@ await nameInput.waitFor()
 const initialFocusIsName = await nameInput.evaluate((element) => element === document.activeElement)
 await nameInput.fill('Мобильная тренировка')
 await page.getByPlaceholder('Например, жим лёжа').fill('Жим лёжа')
-await page.locator('.rest-field select').selectOption('0')
+await page.getByRole('button', { name: /Добавить упражнение/ }).click()
+await page.getByPlaceholder('Например, жим лёжа').nth(1).fill('Тяга блока')
+for (const select of await page.locator('.rest-field select').all()) await select.selectOption('0')
 await page.getByRole('button', { name: 'Сохранить' }).click()
 await page.getByRole('button', { name: 'Начать' }).click()
 await page.getByRole('heading', { name: 'Жим лёжа' }).waitFor()
+
+const exerciseHeaders = page.locator('.exercise-card__header')
+const defaultCollapse = await page.locator('.exercise-card__body').count() === 1
+  && await exerciseHeaders.nth(0).getAttribute('aria-expanded') === 'true'
+  && await exerciseHeaders.nth(1).getAttribute('aria-expanded') === 'false'
 
 const initialSetCount = await page.locator('.set-row').count()
 await swipeLeft(page.locator('.set-row').first())
@@ -43,6 +50,17 @@ const firstSet = page.locator('.set-row').first()
 await firstSet.locator('input').nth(0).fill('80')
 await firstSet.locator('input').nth(1).fill('8')
 await firstSet.getByRole('button', { name: 'Завершить подход' }).click()
+const lastSet = page.locator('.set-row').nth(1)
+await lastSet.locator('input').nth(0).fill('80')
+await lastSet.locator('input').nth(1).fill('8')
+await lastSet.getByRole('button', { name: 'Завершить подход' }).click()
+await page.locator('.exercise-card--complete').waitFor()
+await page.waitForTimeout(250)
+const autoCollapsedWhenComplete = await exerciseHeaders.nth(0).getAttribute('aria-expanded') === 'false'
+const completedCardClipped = await page.locator('.exercise-card--complete').evaluate((element) => {
+  const style = getComputedStyle(element)
+  return style.overflow === 'hidden' && style.borderRadius !== '0px' && style.backgroundImage !== 'none'
+})
 const restTimerCount = await page.locator('.rest-timer').count()
 const finishButton = page.getByRole('button', { name: 'Завершить тренировку', exact: true })
 await finishButton.scrollIntoViewIfNeeded()
@@ -61,7 +79,10 @@ await page.getByText('История пока пуста').waitFor()
 
 const result = {
   initialFocusIsName,
+  defaultCollapse,
   setSwipeDeleted: initialSetCount === 3 && afterSwipeSetCount === 2,
+  autoCollapsedWhenComplete,
+  completedCardClipped,
   timerDisabled: timerDisabled && restTimerCount === 0,
   finishButtonAtBottom: true,
   oneRmRemoved: oneRmVisible === 0,
