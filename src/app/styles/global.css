@@ -540,6 +540,7 @@ select option { color: #e7e9ef; background: #151925; }
   .workout-session-header__actions .button--ghost { display: none; }
   .session-live-metrics > div { min-width: 0; }
   .sets-labels { display: none; }
+  .sets-list { margin-top: 6px; }
   .set-row { grid-template-columns: 30px 1fr 14px 1fr 34px; }
   .previous-set, .set-volume, .remove-set { display: none; }
   .active-dock { display: none; }

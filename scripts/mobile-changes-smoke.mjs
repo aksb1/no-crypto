@@ -39,6 +39,7 @@ const exerciseHeaders = page.locator('.exercise-card__header')
 const defaultCollapse = await page.locator('.exercise-card__body').count() === 1
   && await exerciseHeaders.nth(0).getAttribute('aria-expanded') === 'true'
   && await exerciseHeaders.nth(1).getAttribute('aria-expanded') === 'false'
+const firstSetSpacing = await page.locator('.sets-list').evaluate((element) => getComputedStyle(element).marginTop === '6px')
 
 const initialSetCount = await page.locator('.set-row').count()
 await swipeLeft(page.locator('.set-row').first())
@@ -47,13 +48,24 @@ const afterSwipeSetCount = await page.locator('.set-row').count()
 const timerDisabled = await page.getByText('Таймер отдыха отключён').isVisible()
 
 const firstSet = page.locator('.set-row').first()
-await firstSet.locator('input').nth(0).fill('80')
-await firstSet.locator('input').nth(1).fill('8')
-await firstSet.getByRole('button', { name: 'Завершить подход' }).click()
+const firstWeight = firstSet.locator('input').nth(0)
+const firstRepetitions = firstSet.locator('input').nth(1)
+await firstWeight.fill('80')
+await firstWeight.press('Enter')
+const weightAdvancedToRepetitions = await firstRepetitions.evaluate((element) => element === document.activeElement)
+await firstRepetitions.fill('8')
+await firstRepetitions.press('Enter')
+await page.locator('.set-row--completed').waitFor()
 const lastSet = page.locator('.set-row').nth(1)
-await lastSet.locator('input').nth(0).fill('80')
-await lastSet.locator('input').nth(1).fill('8')
-await lastSet.getByRole('button', { name: 'Завершить подход' }).click()
+const lastWeight = lastSet.locator('input').nth(0)
+const lastRepetitions = lastSet.locator('input').nth(1)
+await page.waitForFunction((id) => document.activeElement?.id === id, await lastWeight.getAttribute('id'))
+const repetitionsAdvancedToNextSet = await lastWeight.evaluate((element) => element === document.activeElement)
+await lastWeight.fill('80')
+await lastWeight.press('Enter')
+const nextWeightAdvancedToRepetitions = await lastRepetitions.evaluate((element) => element === document.activeElement)
+await lastRepetitions.fill('8')
+await lastRepetitions.press('Enter')
 await page.locator('.exercise-card--complete').waitFor()
 await page.waitForTimeout(250)
 const autoCollapsedWhenComplete = await exerciseHeaders.nth(0).getAttribute('aria-expanded') === 'false'
@@ -80,7 +92,9 @@ await page.getByText('История пока пуста').waitFor()
 const result = {
   initialFocusIsName,
   defaultCollapse,
+  firstSetSpacing,
   setSwipeDeleted: initialSetCount === 3 && afterSwipeSetCount === 2,
+  keyboardSetFlow: weightAdvancedToRepetitions && repetitionsAdvancedToNextSet && nextWeightAdvancedToRepetitions,
   autoCollapsedWhenComplete,
   completedCardClipped,
   timerDisabled: timerDisabled && restTimerCount === 0,
