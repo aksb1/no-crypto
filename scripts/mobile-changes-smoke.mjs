@@ -34,6 +34,7 @@ for (const select of await page.locator('.rest-field select').all()) await selec
 await page.getByRole('button', { name: 'Сохранить' }).click()
 await page.getByRole('button', { name: 'Начать' }).click()
 await page.getByRole('heading', { name: 'Жим лёжа' }).waitFor()
+const liveMetricIconSize = await page.locator('.session-live-metrics svg').first().evaluate((element) => Number.parseFloat(getComputedStyle(element).width) >= 20)
 
 const exerciseHeaders = page.locator('.exercise-card__header')
 const defaultCollapse = await page.locator('.exercise-card__body').count() === 1
@@ -77,10 +78,34 @@ const restTimerCount = await page.locator('.rest-timer').count()
 const finishButton = page.getByRole('button', { name: 'Завершить тренировку', exact: true })
 await finishButton.scrollIntoViewIfNeeded()
 await finishButton.click()
+const finishModal = await page.locator('.modal').boundingBox()
+const finishActionBoxes = await Promise.all((await page.locator('.finish-summary__actions .button').all()).map((button) => button.boundingBox()))
+const finishButtonsFit = Boolean(finishModal)
+  && finishActionBoxes.every((box) => box && box.x >= finishModal.x && box.x + box.width <= finishModal.x + finishModal.width)
+  && finishActionBoxes.every((box) => box && Math.abs(box.width - finishActionBoxes[0].width) < 1)
 await page.getByRole('button', { name: 'Сохранить результат' }).click()
+
+const historyTab = page.locator('.segmented button').filter({ hasText: 'История' })
+await historyTab.waitFor()
+const completedLandsInHistory = (await historyTab.getAttribute('class'))?.includes('active') ?? false
+await page.getByRole('button', { name: 'Развернуть тренировку' }).click()
+await page.locator('.history-session-details').waitFor()
+const historyShowsAllExercises = await page.locator('.history-exercise-row').count() === 2
+  && await page.locator('.history-exercise-row__sets span').count() === 2
+
+await page.getByRole('button', { name: 'Шаблоны' }).click()
+await page.getByRole('button', { name: 'Начать' }).click()
+await page.getByRole('heading', { name: 'Жим лёжа' }).waitFor()
+const hintedInputs = page.locator('.set-row').first().locator('input')
+const previousResultsAreHints = await hintedInputs.nth(0).inputValue() === ''
+  && await hintedInputs.nth(1).inputValue() === ''
+  && await hintedInputs.nth(0).getAttribute('placeholder') === '80'
+  && await hintedInputs.nth(1).getAttribute('placeholder') === '8'
+await page.locator('.workout-session-header__left button').click()
 
 await page.getByRole('link', { name: 'Статистика' }).click()
 const oneRmVisible = await page.getByText(/1RM|одноповторный максимум/i).count()
+const statisticsVolumeAligned = await page.locator('.result-sets small').first().evaluate((element) => getComputedStyle(element).textAlign === 'left')
 await page.getByRole('link', { name: 'Тренировки' }).click()
 await page.getByRole('button', { name: 'История' }).click()
 await swipeLeft(page.locator('.history-row').first())
@@ -91,15 +116,21 @@ await page.getByText('История пока пуста').waitFor()
 
 const result = {
   initialFocusIsName,
+  liveMetricIconSize,
   defaultCollapse,
   firstSetSpacing,
   setSwipeDeleted: initialSetCount === 3 && afterSwipeSetCount === 2,
   keyboardSetFlow: weightAdvancedToRepetitions && repetitionsAdvancedToNextSet && nextWeightAdvancedToRepetitions,
   autoCollapsedWhenComplete,
   completedCardClipped,
+  finishButtonsFit,
+  completedLandsInHistory,
+  historyShowsAllExercises,
+  previousResultsAreHints,
   timerDisabled: timerDisabled && restTimerCount === 0,
   finishButtonAtBottom: true,
   oneRmRemoved: oneRmVisible === 0,
+  statisticsVolumeAligned,
   historyDeleteConfirmed: deleteConfirmationVisible,
   problems,
 }

@@ -178,6 +178,21 @@ export async function getSessionDetails(sessionId: string): Promise<SessionDetai
   return { ...session, exercises: detailed }
 }
 
+export async function getPreviousSessionSetHints(templateId: string): Promise<Map<string, WorkoutSet[]>> {
+  const previous = (await db.sessions
+    .where('[templateId+status]')
+    .equals([templateId, 'completed'])
+    .toArray())
+    .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))[0]
+
+  if (!previous) return new Map()
+  const details = await getSessionDetails(previous.id)
+  return new Map(details.exercises.map((exercise) => [
+    exercise.exerciseId,
+    exercise.sets.filter((set) => set.completed),
+  ]))
+}
+
 export async function updateSet(setId: string, patch: Partial<Pick<WorkoutSet, 'weight' | 'repetitions' | 'completed'>>) {
   const set = await db.sets.get(setId)
   if (!set) return

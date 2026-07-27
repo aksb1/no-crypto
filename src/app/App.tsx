@@ -21,6 +21,7 @@ export default function App() {
             <Route path="/" component={DashboardPage} />
             <Route path="/workouts/new" component={WorkoutBuilderPage} />
             <Route path="/workouts/:templateId/edit" component={WorkoutBuilderPage} />
+            <Route path="/workouts/history" component={WorkoutsPage} />
             <Route path="/workouts" component={WorkoutsPage} />
             <Route path="/session/:sessionId" component={ActiveWorkoutPage} />
             <Route path="/statistics" component={StatisticsPage} />

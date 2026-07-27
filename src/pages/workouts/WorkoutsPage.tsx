@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { motion } from 'motion/react'
-import { Clock3, Dumbbell, Ellipsis, GripVertical, History, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
-import { Link } from 'wouter'
+import { AnimatePresence, motion } from 'motion/react'
+import { CheckCircle2, ChevronDown, Clock3, Dumbbell, Ellipsis, GripVertical, History, Pencil, Play, Plus, Search, Trash2 } from 'lucide-react'
+import { Link, useLocation } from 'wouter'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -12,8 +12,8 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { WorkoutHistoryRow } from '../../components/workouts/WorkoutHistoryRow'
-import { archiveTemplate, deleteCompletedSession, listCompletedSessions, listTemplateDetails, reorderTemplates, restoreTemplate } from '../../storage/repositories/workoutRepository'
-import { formatDuration, formatRelative } from '../../utils/format'
+import { archiveTemplate, deleteCompletedSession, getSessionDetails, listCompletedSessions, listTemplateDetails, reorderTemplates, restoreTemplate } from '../../storage/repositories/workoutRepository'
+import { formatCompact, formatDuration, formatNumber, formatRelative } from '../../utils/format'
 import { useSwipeToDelete } from '../../hooks/useSwipeToDelete'
 import type { TemplateDetails, WorkoutSession } from '../../types/domain'
 import { useWorkoutStart } from '../../features/workout-session/WorkoutStartProvider'
@@ -51,27 +51,58 @@ function SortableWorkoutCard({ template, last, menuOpen, dragDisabled, onToggleM
   )
 }
 
+function HistorySessionDetails({ sessionId }: { sessionId: string }) {
+  const details = useLiveQuery(() => getSessionDetails(sessionId), [sessionId])
+  if (!details) return <div className="history-session-loading"><span>Загружаем упражнения…</span></div>
+
+  return (
+    <motion.div className="history-session-details" initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.2, ease: 'easeOut' }}>
+      <div className="history-session-details__inner">
+        {details.exercises.map((exercise, index) => {
+          const sets = exercise.sets.filter((set) => set.completed)
+          const volume = sets.reduce((sum, set) => sum + (set.weight ?? 0) * (set.repetitions ?? 0), 0)
+          return (
+            <div className="history-exercise-row" key={exercise.id}>
+              <div className="history-exercise-row__title"><span>{String(index + 1).padStart(2, '0')}</span><div><strong>{exercise.exerciseNameSnapshot}</strong><small><CheckCircle2 size={12} />{sets.length} подходов · {formatCompact(volume)} кг</small></div></div>
+              <div className="history-exercise-row__sets">{sets.length ? sets.map((set) => <span key={set.id}><strong>{formatNumber(set.weight ?? 0)}</strong> × {set.repetitions ?? 0}</span>) : <small>Нет выполненных подходов</small>}</div>
+            </div>
+          )
+        })}
+      </div>
+    </motion.div>
+  )
+}
+
 function SwipeableHistoryRow({ session, onDelete }: { session: WorkoutSession; onDelete: () => void }) {
   const swipe = useSwipeToDelete(onDelete)
+  const [expanded, setExpanded] = useState(false)
   return (
-    <div className="history-row-swipe">
-      <div className="history-delete-layer"><Trash2 size={18} /><span>Удалить</span></div>
-      <WorkoutHistoryRow session={session} style={{ transform: `translateX(${swipe.offset}px)` }} {...swipe.handlers} />
+    <div className={`history-entry ${expanded ? 'history-entry--expanded' : ''}`}>
+      <div className="history-row-swipe">
+        <div className="history-delete-layer"><Trash2 size={18} /><span>Удалить</span></div>
+        <WorkoutHistoryRow session={session} style={{ transform: `translateX(${swipe.offset}px)` }} action={<button className="history-row__toggle" type="button" aria-label={expanded ? 'Свернуть тренировку' : 'Развернуть тренировку'} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><ChevronDown size={18} className={expanded ? 'rotate' : ''} /></button>} {...swipe.handlers} />
+      </div>
+      <AnimatePresence initial={false}>{expanded && <HistorySessionDetails sessionId={session.id} />}</AnimatePresence>
     </div>
   )
 }
 
 export function WorkoutsPage() {
+  const [location, navigate] = useLocation()
   const startWorkout = useWorkoutStart()
   const templates = useLiveQuery(listTemplateDetails, [])
   const sessions = useLiveQuery(() => listCompletedSessions(), [])
-  const [tab, setTab] = useState<'templates' | 'history'>('templates')
+  const [tab, setTab] = useState<'templates' | 'history'>(location === '/workouts/history' ? 'history' : 'templates')
   const [query, setQuery] = useState('')
   const [menu, setMenu] = useState<string | null>(null)
   const [undoId, setUndoId] = useState<string | null>(null)
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<WorkoutSession | null>(null)
   const [deleteTemplateTarget, setDeleteTemplateTarget] = useState<TemplateDetails | null>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
+
+  useEffect(() => {
+    setTab(location === '/workouts/history' ? 'history' : 'templates')
+  }, [location])
 
   const filtered = useMemo(() => templates?.filter((template) => template.name.toLowerCase().includes(query.toLowerCase())) ?? [], [templates, query])
   const lastByTemplate = useMemo(() => {
@@ -87,6 +118,11 @@ export function WorkoutsPage() {
     window.setTimeout(() => setUndoId((current) => current === id ? null : current), 6000)
   }
 
+  function selectTab(next: 'templates' | 'history') {
+    setTab(next)
+    navigate(next === 'history' ? '/workouts/history' : '/workouts')
+  }
+
   async function handleDragEnd(event: DragEndEvent) {
     if (query.trim() || !templates || !event.over || event.active.id === event.over.id) return
     const oldIndex = templates.findIndex((template) => template.id === event.active.id)
@@ -100,7 +136,7 @@ export function WorkoutsPage() {
     <motion.div className="page" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
       <PageHeader eyebrow="Training space" title="Тренировки" description="Создавай программы один раз и запускай нужную тренировку в одно касание." actions={<Link href="/workouts/new"><Button icon={<Plus size={17} />}>Новая тренировка</Button></Link>} />
       <div className="toolbar">
-        <div className="segmented"><button className={tab === 'templates' ? 'active' : ''} onClick={() => setTab('templates')}><Dumbbell size={16} />Шаблоны</button><button className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}><History size={16} />История</button></div>
+        <div className="segmented"><button className={tab === 'templates' ? 'active' : ''} onClick={() => selectTab('templates')}><Dumbbell size={16} />Шаблоны</button><button className={tab === 'history' ? 'active' : ''} onClick={() => selectTab('history')}><History size={16} />История</button></div>
         <label className="search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Найти тренировку" /></label>
       </div>
       {undoId && <div className="undo-banner"><span>Тренировка перемещена в архив</span><button onClick={async () => { await restoreTemplate(undoId); setUndoId(null) }}>Отменить</button></div>}
