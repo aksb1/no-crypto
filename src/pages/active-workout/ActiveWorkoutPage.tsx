@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowLeft, Check, CheckCircle2, ChevronDown, Clock3, Dumbbell, History, Plus, RotateCcw, Sparkles, TimerReset, Trash2, Trophy } from 'lucide-react'
@@ -7,7 +7,7 @@ import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Modal } from '../../components/ui/Modal'
 import { useRestTimer } from '../../features/rest-timer/useRestTimer'
-import { addSet, cancelSession, completeSession, getPreviousSessionSetHints, getSessionDetails, removeSet, updateSet } from '../../storage/repositories/workoutRepository'
+import { addSessionExercise, addSet, cancelSession, completeSession, getPreviousSessionSetHints, getSessionDetails, removeSet, updateSet } from '../../storage/repositories/workoutRepository'
 import type { SessionExercise, WorkoutSet } from '../../types/domain'
 import { formatCompact, formatDuration, formatNumber } from '../../utils/format'
 import { ExerciseHistoryModal } from '../../widgets/exercise-history/ExerciseHistoryModal'
@@ -68,10 +68,10 @@ function SetRow({ set, previousSet, number, nextSetId, onComplete, onSubmit, onR
   )
 }
 
-function ExerciseCard({ exercise, previousSets, index, onHistory, autoStartTimer }: { exercise: SessionExercise & { sets: WorkoutSet[] }; previousSets?: WorkoutSet[]; index: number; onHistory: () => void; autoStartTimer: boolean }) {
+function ExerciseCard({ exercise, previousSets, index, onHistory, autoStartTimer, initiallyExpanded = false }: { exercise: SessionExercise & { sets: WorkoutSet[] }; previousSets?: WorkoutSet[]; index: number; onHistory: () => void; autoStartTimer: boolean; initiallyExpanded?: boolean }) {
   const completed = exercise.sets.filter((set) => set.completed).length
   const isComplete = exercise.sets.length > 0 && completed === exercise.sets.length
-  const [collapsed, setCollapsed] = useState(index !== 0 || isComplete)
+  const [collapsed, setCollapsed] = useState(initiallyExpanded ? false : index !== 0 || isComplete)
   const { start } = useRestTimer()
   const volume = exercise.sets.reduce((sum, set) => sum + (set.completed ? (set.weight ?? 0) * (set.repetitions ?? 0) : 0), 0)
 
@@ -127,6 +127,11 @@ export function ActiveWorkoutPage() {
   const [finishOpen, setFinishOpen] = useState(false)
   const [historyExercise, setHistoryExercise] = useState<{ id: string; name: string } | null>(null)
   const [finishing, setFinishing] = useState(false)
+  const [addExerciseOpen, setAddExerciseOpen] = useState(false)
+  const [exerciseName, setExerciseName] = useState('')
+  const [exerciseRestSeconds, setExerciseRestSeconds] = useState<number | null>(null)
+  const [addingExercise, setAddingExercise] = useState(false)
+  const [addedExerciseId, setAddedExerciseId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!session) return
@@ -135,6 +140,14 @@ export function ActiveWorkoutPage() {
     const timer = window.setInterval(tick, 1000)
     return () => window.clearInterval(timer)
   }, [session?.startedAt])
+
+  useEffect(() => {
+    if (!addedExerciseId || !session?.exercises.some((exercise) => exercise.id === addedExerciseId)) return
+    window.requestAnimationFrame(() => {
+      document.getElementById(`exercise-${addedExerciseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setAddedExerciseId(null)
+    })
+  }, [addedExerciseId, session?.exercises])
 
   const totals = useMemo(() => {
     const sets = session?.exercises.flatMap((exercise) => exercise.sets) ?? []
@@ -158,6 +171,25 @@ export function ActiveWorkoutPage() {
     navigate('/workouts')
   }
 
+  function openAddExercise() {
+    setExerciseName('')
+    setExerciseRestSeconds(settings?.defaultRestSeconds ?? 90)
+    setAddExerciseOpen(true)
+  }
+
+  async function handleAddExercise(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!sessionId || !exerciseName.trim()) return
+    setAddingExercise(true)
+    try {
+      const id = await addSessionExercise(sessionId, exerciseName, exerciseRestSeconds ?? settings?.defaultRestSeconds ?? 90)
+      setAddedExerciseId(id)
+      setAddExerciseOpen(false)
+    } finally {
+      setAddingExercise(false)
+    }
+  }
+
   return (
     <motion.div className="active-workout-page" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <header className="workout-session-header">
@@ -168,7 +200,8 @@ export function ActiveWorkoutPage() {
       <div className="session-progress"><motion.div animate={{ width: `${totals.total ? (totals.completed / totals.total) * 100 : 0}%` }} /></div>
       <div className="active-exercise-list">
         <div className="workout-focus-intro"><div><span>Сегодня</span><h2>Работай в своём ритме</h2><p>Серые цифры — прошлый результат. «Перейти» отметит подход и откроет следующий.</p></div><div className="focus-orb"><Sparkles size={23} /></div></div>
-        {session.exercises.map((exercise, index) => <ExerciseCard key={exercise.id} exercise={exercise} previousSets={previousSetHints?.get(exercise.exerciseId)} index={index} autoStartTimer={settings?.autoStartTimer ?? true} onHistory={() => setHistoryExercise({ id: exercise.exerciseId, name: exercise.exerciseNameSnapshot })} />)}
+        {session.exercises.map((exercise, index) => <div id={`exercise-${exercise.id}`} key={exercise.id}><ExerciseCard exercise={exercise} previousSets={previousSetHints?.get(exercise.exerciseId)} index={index} autoStartTimer={settings?.autoStartTimer ?? true} initiallyExpanded={exercise.id === addedExerciseId} onHistory={() => setHistoryExercise({ id: exercise.exerciseId, name: exercise.exerciseNameSnapshot })} /></div>)}
+        <button className="add-exercise-button session-add-exercise" type="button" onClick={openAddExercise}><Plus size={18} /><div><strong>Добавить упражнение</strong><span>Добавится только в текущую тренировку</span></div></button>
         <Card className="session-finish-panel">
           <div><CheckCircle2 size={22} /><span>Все упражнения выполнены?</span><strong>Заверши тренировку и сохрани результат в историю</strong></div>
           <Button size="lg" icon={<CheckCircle2 size={18} />} onClick={() => setFinishOpen(true)}>Завершить тренировку</Button>
@@ -176,6 +209,13 @@ export function ActiveWorkoutPage() {
       </div>
 
       <ExerciseHistoryModal exerciseId={historyExercise?.id ?? ''} exerciseName={historyExercise?.name ?? ''} open={Boolean(historyExercise)} onClose={() => setHistoryExercise(null)} />
+      <Modal open={addExerciseOpen} onClose={() => !addingExercise && setAddExerciseOpen(false)} title="Добавить упражнение">
+        <form className="session-add-exercise-form" onSubmit={handleAddExercise}>
+          <label className="field"><span>Название упражнения</span><input value={exerciseName} onChange={(event) => setExerciseName(event.target.value)} placeholder="Например, жим гантелей" autoFocus /></label>
+          <label className="field rest-field"><span>Отдых между подходами</span><div><Clock3 size={15} /><select value={exerciseRestSeconds ?? settings?.defaultRestSeconds ?? 90} onChange={(event) => setExerciseRestSeconds(Number(event.target.value))}><option value={0}>Отключён</option><option value={30}>30 сек</option><option value={60}>60 сек</option><option value={90}>90 сек</option><option value={120}>120 сек</option><option value={180}>180 сек</option></select></div></label>
+          <div className="session-add-exercise-form__actions"><Button variant="secondary" type="button" disabled={addingExercise} onClick={() => setAddExerciseOpen(false)}>Отмена</Button><Button type="submit" loading={addingExercise} disabled={!exerciseName.trim()} icon={<Plus size={16} />}>Добавить</Button></div>
+        </form>
+      </Modal>
       <Modal open={finishOpen} onClose={() => setFinishOpen(false)} title="Завершить тренировку?">
         <div className="finish-summary"><div className="finish-trophy"><Trophy size={27} /></div><h3>Отличная работа</h3><p>Результаты сохранятся в истории и статистике.</p><div className="finish-summary__metrics"><div><span>Время</span><strong>{formatDuration(elapsed)}</strong></div><div><span>Подходы</span><strong>{totals.completed}</strong></div><div><span>Объём</span><strong>{formatCompact(totals.volume)} кг</strong></div></div><div className="finish-summary__actions"><Button variant="secondary" onClick={() => setFinishOpen(false)}>Продолжить</Button><Button loading={finishing} onClick={handleFinish} icon={<CheckCircle2 size={17} />}>Сохранить результат</Button></div></div>
       </Modal>

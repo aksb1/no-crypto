@@ -219,22 +219,60 @@ export async function addSet(sessionExerciseId: string) {
   })
 }
 
+export async function addSessionExercise(sessionId: string, name: string, defaultRestSeconds: number) {
+  const trimmedName = name.trim()
+  if (!trimmedName) throw new Error('Добавь название упражнения')
+
+  return db.transaction('rw', [db.sessions, db.exercises, db.sessionExercises, db.sets], async () => {
+    const session = await db.sessions.get(sessionId)
+    if (!session || session.status !== 'active') throw new Error('Активная тренировка не найдена')
+
+    const exercise = await findOrCreateExercise(trimmedName)
+    const existing = await db.sessionExercises.where('sessionId').equals(sessionId).sortBy('position')
+    const sessionExerciseId = createId()
+    await db.sessionExercises.add({
+      id: sessionExerciseId,
+      sessionId,
+      exerciseId: exercise.id,
+      exerciseNameSnapshot: exercise.name,
+      position: existing.length,
+      defaultRestSeconds,
+    })
+
+    await db.sets.bulkAdd(Array.from({ length: 3 }, (_, position) => ({
+      id: createId(),
+      sessionId,
+      sessionExerciseId,
+      exerciseId: exercise.id,
+      position,
+      weight: null,
+      repetitions: null,
+      completed: false,
+    })))
+    return sessionExerciseId
+  })
+}
+
 export async function removeSet(setId: string) {
   const set = await db.sets.get(setId)
   if (!set) return
   await db.sets.delete(setId)
   const remaining = await db.sets.where('sessionExerciseId').equals(set.sessionExerciseId).sortBy('position')
   await Promise.all(remaining.map((item, index) => db.sets.update(item.id, { position: index })))
+  const allSets = await db.sets.where('sessionId').equals(set.sessionId).toArray()
+  await db.sessions.update(set.sessionId, { totalVolume: calculateTotalVolume(allSets) })
 }
 
 export async function completeSession(sessionId: string) {
   const session = await db.sessions.get(sessionId)
   if (!session) return
   const completedAt = now()
+  const completedSetCount = await db.sets.where('sessionId').equals(sessionId).filter((set) => set.completed).count()
   await db.sessions.update(sessionId, {
     status: 'completed',
     completedAt,
     durationSeconds: Math.max(1, Math.round((Date.now() - new Date(session.startedAt).getTime()) / 1000)),
+    completedSetCount,
   })
 }
 
@@ -259,7 +297,18 @@ export async function deleteCompletedSession(sessionId: string) {
 export async function listCompletedSessions(limit?: number) {
   const sorted = (await db.sessions.where('status').equals('completed').toArray())
     .sort((a, b) => (b.completedAt ?? '').localeCompare(a.completedAt ?? ''))
-  return limit ? sorted.slice(0, limit) : sorted
+  const selected = limit ? sorted.slice(0, limit) : sorted
+  const missingCounts = selected.filter((session) => session.completedSetCount === undefined)
+  if (!missingCounts.length) return selected
+
+  const missingIds = missingCounts.map((session) => session.id)
+  const completedSets = await db.sets.where('sessionId').anyOf(missingIds).filter((set) => set.completed).toArray()
+  const counts = new Map<string, number>()
+  completedSets.forEach((set) => counts.set(set.sessionId, (counts.get(set.sessionId) ?? 0) + 1))
+  return selected.map((session) => ({
+    ...session,
+    completedSetCount: session.completedSetCount ?? counts.get(session.id) ?? 0,
+  }))
 }
 
 export async function getExerciseStats(): Promise<ExerciseStats[]> {

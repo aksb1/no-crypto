@@ -80,7 +80,19 @@ function SwipeableHistoryRow({ session, onDelete }: { session: WorkoutSession; o
     <div className={`history-entry ${expanded ? 'history-entry--expanded' : ''}`}>
       <div className="history-row-swipe">
         <div className="history-delete-layer"><Trash2 size={18} /><span>Удалить</span></div>
-        <WorkoutHistoryRow session={session} style={{ transform: `translateX(${swipe.offset}px)` }} action={<button className="history-row__toggle" type="button" aria-label={expanded ? 'Свернуть тренировку' : 'Развернуть тренировку'} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><ChevronDown size={18} className={expanded ? 'rotate' : ''} /></button>} {...swipe.handlers} />
+        <WorkoutHistoryRow
+          session={session}
+          className="history-row--clickable"
+          style={{ transform: `translateX(${swipe.offset}px)` }}
+          role="button"
+          tabIndex={0}
+          aria-label={`Подробнее: ${session.templateNameSnapshot}`}
+          aria-expanded={expanded}
+          onClick={() => { if (swipe.offset > -6) setExpanded((value) => !value) }}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded((value) => !value) } }}
+          action={<button className="history-row__toggle" type="button" aria-label={expanded ? 'Свернуть тренировку' : 'Развернуть тренировку'} aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); setExpanded((value) => !value) }}><ChevronDown size={18} className={expanded ? 'rotate' : ''} /></button>}
+          {...swipe.handlers}
+        />
       </div>
       <AnimatePresence initial={false}>{expanded && <HistorySessionDetails sessionId={session.id} />}</AnimatePresence>
     </div>

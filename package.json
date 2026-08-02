@@ -13,6 +13,7 @@
     "smoke:browser": "node scripts/browser-smoke.mjs",
     "smoke:flow": "node scripts/workout-flow-smoke.mjs",
     "smoke:mobile": "node scripts/mobile-changes-smoke.mjs",
+    "smoke:improvements": "node scripts/forma-improvements-smoke.mjs",
     "smoke:reorder": "node scripts/reorder-smoke.mjs",
     "generate:icons": "node scripts/generate-icons.mjs"
   },

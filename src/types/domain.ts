@@ -39,6 +39,7 @@ export interface WorkoutSession {
   completedAt?: string
   durationSeconds?: number
   totalVolume: number
+  completedSetCount?: number
   notes?: string
 }
 
